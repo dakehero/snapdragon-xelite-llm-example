@@ -5,6 +5,7 @@
 # build output
 build/
 wheels/
+onnxruntime-genai/
 
 # logs
 *.log
