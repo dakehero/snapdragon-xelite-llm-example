@@ -1,0 +1,10 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# build output
+build/
+wheels/
+
+# logs
+*.log
