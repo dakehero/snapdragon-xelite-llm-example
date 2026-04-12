@@ -77,10 +77,10 @@ if ($vsPath) {
     }
 }
 
-# Clone onnxruntime-genai if not present
+# Clone onnxruntime-genai if not present (fixed to v0.13.0 for reproducible builds)
 if (-not (Test-Path "onnxruntime-genai")) {
-    Write-Host "`nCloning onnxruntime-genai..." -ForegroundColor Yellow
-    git clone https://github.com/microsoft/onnxruntime-genai.git
+    Write-Host "`nCloning onnxruntime-genai (v0.13.0)..." -ForegroundColor Yellow
+    git clone --branch v0.13.0 --depth 1 https://github.com/microsoft/onnxruntime-genai.git
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Failed to clone onnxruntime-genai" -ForegroundColor Red
         exit 1
