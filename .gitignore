@@ -1,0 +1,18 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# build output
+build/
+wheels/
+onnxruntime-genai/
+
+# logs
+*.log
+
+# profile output (Chrome-trace JSONs, can be large)
+profile_output/
+
+# local-only personal notes (not for public repo)
+NOTES.local.md
+*.local.md
