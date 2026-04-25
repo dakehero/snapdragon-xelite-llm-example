@@ -2,9 +2,9 @@
 
 > Working notes for session-to-session continuity. Not a polished roadmap.
 > Positioning: blog-level technical curiosity, not paper or product.
-> Last updated: **2026-04-25** — Qwen 7B full context-length sweep shipped
-> with PNG plot; README pivoted to context-sweep headline. Plan A (NPU
-> prefill + CPU decode) is still a weekend prototype target.
+> Last updated: **2026-04-25** — Multi-model context sweep now covers Qwen
+> 1.5B, Qwen 7B, and R1-Distill 14B; README pivoted to size × context ×
+> feasibility. Plan A (NPU prefill + CPU decode) is still a weekend prototype target.
 
 ## Key Findings
 
@@ -185,6 +185,36 @@ as-stated, but the magnitude is context-dependent. The phase × size
 story from F2 is *correct in direction*; F7 adds the phase × context
 dimension that makes it actionable.
 
+### F8. Size × context: decode crossover moves left, but feasibility bites
+
+Multi-model context sweeps, synthetic prompt of exact token count,
+decode-tokens=128, 1 warmup + 3 measured runs:
+
+| Model | NPU prefill peak | ctx=64 decode winner | Long-context decode | NPU feasibility |
+|---|---:|---|---|---|
+| Qwen 1.5B | 921 t/s @ ctx=256 | CPU 1.9x | CPU still 1.55x at ctx=8192 | Runs through ctx=8192 |
+| Qwen 7B | 356 t/s @ ctx=128 | CPU 1.6x | Within noise at ctx=8192 | Runs through ctx=8192 |
+| R1-Distill 14B | 166 t/s @ ctx=64 | CPU 1.4x | NPU roughly tied/slightly ahead by ctx=1024-2048 | QNN fails at ctx=4096 |
+
+Key observations:
+
+- **CPU decode advantage erodes faster as model size grows.** 1.5B keeps a
+  clear CPU decode lead through 8192 tokens. 7B reaches parity at 8192. 14B
+  is already near parity by 1024-2048.
+
+- **NPU prefill remains the TTFT engine when it fits.** Across all successful
+  14B points, NPU prefill is ~4.4-6.4x faster than CPU prefill. At ctx=2048,
+  TTFT is 24.6s on NPU vs 109.1s on CPU.
+
+- **Large-model long-context execution has a feasibility boundary.** R1-Distill
+  14B QNN fails at ctx=4096 while CPU continues at 16.1 prefill t/s and 3.0
+  decode t/s. Treat this as `N/A` / runtime failure, not zero throughput.
+
+- **The policy problem is feasibility-aware, not just speed-aware.** A runtime
+  must first ask whether QNN can load and execute a given model × context under
+  the NPU-visible memory budget, then choose CPU/NPU/hybrid among feasible
+  options.
+
 ## Plans
 
 ### Plan A — NPU prefill + CPU decode (weekend prototype, CURRENT FOCUS)
@@ -287,9 +317,10 @@ only; on X2 the asymmetry compresses.** Pitch accordingly.
   perplexity.
 
 ### Medium (after Plan A lands)
-- [x] **Context-length sweep benchmark** — shipped as F7 (Qwen 7B only).
-  Hypothesis confirmed: CPU decode TPS drops sharply when KV cache
-  exceeds cache-resident size; NPU curve flatter.
+- [x] **Context-length sweep benchmark** — shipped as F7/F8 (Qwen 1.5B,
+  Qwen 7B, R1-Distill 14B). Hypothesis confirmed: CPU decode TPS drops
+  sharply when KV cache exceeds cache-resident size; NPU curve flatter,
+  but large-model QNN hits a feasibility boundary at 14B ctx=4096.
 - [ ] **Genie vs ORT-GenAI ablation** on same Qwen 2.5 7B weights.
   Quantifies the lm_head-on-CPU cost. Clean second data point.
 - [ ] **QNN SDK profiling** (`QNN_PROFILING_LEVEL=detailed`) to open the

@@ -3,6 +3,7 @@ import onnxruntime_genai as og
 import onnxruntime_qnn
 import time
 import os
+import sys
 
 # Add DLL directories
 qnn_dir = os.path.dirname(onnxruntime_qnn.__file__)
@@ -133,6 +134,7 @@ def run_benchmark(model_dir, prompt=None, max_length=512, prompt_tokens=None, de
         print(f"\nRuntime error: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="QNN NPU inference benchmark")

@@ -73,9 +73,12 @@ def plot_sweeps(parsed_files, labels, out_path):
     # --- absolute-value panels ---
     for ax, metric, title in abs_panels:
         for fi, (parsed, label) in enumerate(zip(parsed_files, labels)):
-            ctxs = sorted(parsed.keys())
+            all_ctxs = sorted(parsed.keys())
             for backend, style in backend_style.items():
-                if not all(backend in parsed[c] and metric in parsed[c][backend] for c in ctxs):
+                # Plot only contexts where this backend has data (skip N/A points).
+                ctxs = [c for c in all_ctxs
+                        if backend in parsed[c] and metric in parsed[c][backend]]
+                if not ctxs:
                     continue
                 med = [parsed[c][backend][metric][0] for c in ctxs]
                 std = [parsed[c][backend][metric][1] for c in ctxs]
@@ -103,11 +106,13 @@ def plot_sweeps(parsed_files, labels, out_path):
         ("decode",  "Decode",           "tab:green", "s", lambda n, c: n / c),
     ]
     for fi, (parsed, label) in enumerate(zip(parsed_files, labels)):
-        ctxs = sorted(parsed.keys())
+        all_ctxs = sorted(parsed.keys())
         for metric, pretty, color, marker, ratio_fn in speedup_metrics:
-            if not all("ort-qnn" in parsed[c] and "ort-cpu" in parsed[c] and
-                       metric in parsed[c]["ort-qnn"] and metric in parsed[c]["ort-cpu"]
-                       for c in ctxs):
+            ctxs = [c for c in all_ctxs
+                    if "ort-qnn" in parsed[c] and "ort-cpu" in parsed[c]
+                    and metric in parsed[c]["ort-qnn"]
+                    and metric in parsed[c]["ort-cpu"]]
+            if not ctxs:
                 continue
             ratios = [
                 ratio_fn(parsed[c]["ort-qnn"][metric][0], parsed[c]["ort-cpu"][metric][0])

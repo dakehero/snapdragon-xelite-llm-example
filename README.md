@@ -327,6 +327,45 @@ make benchmark-context `
 make plot INPUTS=results/context_sweep_qwen7b.md
 ```
 
+### Multi-model comparison: size × context interaction
+
+![All models context-length sweep](results/context_sweep_all_models.png)
+
+Full data:
+- Qwen 1.5B: [`results/context_sweep_qwen1.5b.md`](results/context_sweep_qwen1.5b.md)
+- R1-Distill 14B: [`results/context_sweep_r1distill14b.md`](results/context_sweep_r1distill14b.md)
+
+**Key patterns across model sizes:**
+
+1. **NPU prefill peak shifts with model size.** Smaller models sustain high throughput longer:
+   - Qwen 1.5B: peaks at ctx=256 (920 t/s)
+   - Qwen 7B: peaks at ctx=128 (356 t/s)
+   - R1-Distill 14B: peaks at ctx=64 (166 t/s), OOM at ctx=4096
+
+2. **CPU decode advantage is universal at short context.** All three models show CPU winning decode by 1.5-2x at ctx=64, with the advantage eroding as context grows.
+
+3. **Memory pressure dominates for large models.** The 14B model hits NPU OOM at ctx=4096, while 1.5B and 7B run successfully through 8192 tokens. This suggests that large-model long-context execution needs a feasibility-aware
+heterogeneous policy: use NPU prefill where it fits, but fall back to CPU when the NPU-visible memory budget is exceeded.
+
+**Reproduce:**
+```powershell
+# Qwen 1.5B
+make benchmark-context `
+  ORT_QNN_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-1.5b-instruct-qnn-npu-2\v2" `
+  ORT_CPU_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-1.5b-instruct-generic-cpu-4\v4" `
+  OUTPUT_MD=results/context_sweep_qwen1.5b.md
+
+# R1-Distill 14B (NPU OOM at 4096, so cap there)
+make benchmark-context `
+  ORT_QNN_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\deepseek-r1-distill-qwen-14b-qnn-npu-1\qnn-deepseek-r1-distill-qwen-14b" `
+  ORT_CPU_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\deepseek-r1-distill-qwen-14b-generic-cpu-4\v4" `
+  CONTEXTS=64,128,256,512,1024,2048,4096 `
+  OUTPUT_MD=results/context_sweep_r1distill14b.md
+
+# Plot all three together
+pixi run python plot.py results/context_sweep_qwen7b.md results/context_sweep_qwen1.5b.md results/context_sweep_r1distill14b.md --labels "Qwen 7B" "Qwen 1.5B" "R1-Distill 14B" --out results/context_sweep_all_models.png
+```
+
 ### Reference: single-point benchmarks, other models
 
 These are older numbers from before we built the context-sweep harness — one
