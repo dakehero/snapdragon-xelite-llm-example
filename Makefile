@@ -4,7 +4,7 @@
 # Core entry points (benchmark.py, verify.py, profile.py, llm_infer_*.py)
 # live at the repo root. scripts/ holds only environment/build tooling.
 
-.PHONY: help build build-ort build-genai install test run run-npu run-cpu run-ort-qnn run-ort-cpu benchmark benchmark-context plot profile verify download-model build-onnx check clean
+.PHONY: help build build-ort build-genai install test run run-npu run-cpu run-ort-qnn run-ort-cpu benchmark benchmark-context plot profile verify check clean
 
 # Default
 help:
@@ -16,8 +16,6 @@ help:
 	@echo "  build-genai        Build onnxruntime-genai (set QNN_SDK_ROOT)"
 	@echo "  install            Install the built genai wheel + DLLs"
 	@echo "  check / test       Check ORT environment and QNN EP availability"
-	@echo "  download-model     Download a reference ONNX model from HuggingFace"
-	@echo "  build-onnx         Build CPU-int4 ONNX from HuggingFace (cloud VM)"
 	@echo "  run-ort-qnn        Run ORT-GenAI + QNN EP inference (MODEL_DIR)"
 	@echo "  run-ort-cpu        Run ORT-GenAI + CPU EP inference (MODEL_DIR)"
 	@echo "  benchmark          Single-prompt benchmark (warmup + multi-run stats)"
@@ -134,20 +132,6 @@ verify:
 		$(if $(CPU_MODEL_DIR),--cpu-model-dir "$(CPU_MODEL_DIR)") \
 		$(if $(PROMPT),--prompt "$(PROMPT)") \
 		--num-tokens $(or $(NUM_TOKENS),20)
-
-# --- Data ---
-
-download-model:
-	pixi run python scripts/download_model.py
-
-# Build CPU-int4 ONNX from HuggingFace. Run on a 64+ GB Linux VM, not X Elite.
-#   make build-onnx HF_ID=Qwen/Qwen2.5-14B-Instruct OUT=./qwen2.5-14b-cpu-int4
-build-onnx:
-	python scripts/build_onnx_model.py \
-		--hf-id "$(HF_ID)" \
-		--out "$(OUT)" \
-		--precision $(or $(PRECISION),int4) \
-		--execution-provider $(or $(EP),cpu)
 
 # --- Clean ---
 

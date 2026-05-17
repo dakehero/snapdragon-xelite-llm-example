@@ -66,6 +66,24 @@ def parse_metrics(output):
 
 def run_inference(script, model_dir, prompt=None, max_length=512,
                   prompt_tokens=None, decode_tokens=None):
+    if not os.path.exists(script):
+        return {
+            "decode_tps": None,
+            "prefill_tps": None,
+            "tokens": None,
+            "ttft": None,
+            "returncode": 2,
+            "output": f"Backend script not found: {script}",
+        }
+    if not os.path.exists(model_dir):
+        return {
+            "decode_tps": None,
+            "prefill_tps": None,
+            "tokens": None,
+            "ttft": None,
+            "returncode": 2,
+            "output": f"Model directory not found: {model_dir}",
+        }
     cmd = [sys.executable, script, model_dir]
     if prompt_tokens is not None:
         cmd += ["--prompt-tokens", str(prompt_tokens)]
@@ -78,6 +96,11 @@ def run_inference(script, model_dir, prompt=None, max_length=512,
     m = parse_metrics(result.stdout + result.stderr)
     m["returncode"] = result.returncode
     m["output"] = result.stdout + result.stderr
+    if result.returncode == 0 and (
+        m["decode_tps"] is None or m["prefill_tps"] is None or m["ttft"] is None
+    ):
+        m["returncode"] = 3
+        m["output"] += "\nBenchmark parser did not find Prefill speed, Decode speed, and TTFT."
     return m
 
 
@@ -88,8 +111,7 @@ def run_multiple(label, script, model_dir, warmup, runs, verbose=False, **kwargs
         r = run_inference(script, model_dir, **kwargs)
         if r["returncode"] != 0:
             print(f" FAILED (rc={r['returncode']})")
-            if verbose:
-                print(r["output"])
+            print(r["output"] if verbose else first_lines(r["output"]))
             return None
         print(
             f" prefill {r['prefill_tps'] or 0:.2f} t/s, "
@@ -102,8 +124,7 @@ def run_multiple(label, script, model_dir, warmup, runs, verbose=False, **kwargs
         r = run_inference(script, model_dir, **kwargs)
         if r["returncode"] != 0:
             print(f" FAILED (rc={r['returncode']})")
-            if verbose:
-                print(r["output"])
+            print(r["output"] if verbose else first_lines(r["output"]))
             continue
         print(
             f" prefill {r['prefill_tps'] or 0:.2f} t/s, "
@@ -112,6 +133,13 @@ def run_multiple(label, script, model_dir, warmup, runs, verbose=False, **kwargs
         )
         results.append(r)
     return results
+
+
+def first_lines(text, limit=12):
+    lines = text.strip().splitlines()
+    if len(lines) <= limit:
+        return text.strip()
+    return "\n".join(lines[:limit] + [f"... ({len(lines) - limit} more lines; rerun with --verbose)"])
 
 
 # --- aggregation / formatting ----------------------------------------------
@@ -229,7 +257,9 @@ def run_sweep_mode(args):
             results = run_multiple(
                 label, b["script"], b["model_dir"],
                 args.warmup, args.runs, args.verbose,
-                prompt_tokens=ctx, decode_tokens=args.decode_tokens,
+                prompt_tokens=ctx,
+                decode_tokens=args.decode_tokens,
+                max_length=args.max_length,
             ) or []
             sweep_results[ctx][b["name"]] = results
             print()

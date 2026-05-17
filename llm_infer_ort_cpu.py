@@ -2,6 +2,7 @@ import argparse
 import onnxruntime_genai as og
 import time
 import os
+import sys
 
 
 _FILLER = (
@@ -28,7 +29,7 @@ def make_input_tokens(tokenizer, prompt_str, prompt_tokens):
 def run_cpu_benchmark(model_dir, prompt=None, max_length=512, prompt_tokens=None, decode_tokens=None):
     if not os.path.exists(model_dir):
         print(f"CPU model directory not found: {model_dir}")
-        return
+        sys.exit(2)
 
     try:
         print("--- Initializing CPU engine (Oryon Cores) ---")
@@ -99,6 +100,7 @@ def run_cpu_benchmark(model_dir, prompt=None, max_length=512, prompt_tokens=None
 
     except Exception as e:
         print(f"\nRuntime error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CPU inference benchmark")

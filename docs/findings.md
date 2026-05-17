@@ -1,8 +1,34 @@
 # Findings log
 
-This is the long-form findings and planning log. The README keeps only the headline conclusions.
+This is the long-form findings and planning log. The README keeps the current checked-in result and reproduction path.
+
+## Current checked-in result
+
+### F9. X2 Elite rerun: Qwen 7B is faster, but CPU still wins decode
+
+Qwen 2.5 7B Instruct int4, Foundry Local QNN + CPU models, synthetic prompt of exact token count, decode-tokens=128, 1 warmup + 3 measured runs on Snapdragon X2 Elite:
+
+| ctx | QNN prefill | CPU prefill | QNN prefill speedup | QNN decode | CPU decode | CPU decode lead |
+|---:|---:|---:|---:|---:|---:|---:|
+| 64 | 461.10 | 116.21 | 4.0x | 17.12 | 27.74 | +62% |
+| 128 | 505.43 | 116.31 | 4.3x | 17.62 | 26.32 | +49% |
+| 256 | 521.32 | 112.24 | 4.6x | 16.50 | 26.07 | +58% |
+| 512 | 511.37 | 108.21 | 4.7x | 14.82 | 23.70 | +60% |
+| 1024 | 468.56 | 106.75 | 4.4x | 13.60 | 19.16 | +41% |
+| 2048 | 402.10 | 121.51 | 3.3x | 10.11 | 15.88 | +57% |
+| 4096 | 328.15 | 106.81 | 3.1x | 7.61 | 10.59 | +39% |
+| 8192 | 200.75 | 82.75 | 2.4x | 5.08 | 6.34 | +25% |
+
+Key observations:
+
+- **QNN prefill is substantially faster than CPU at every context length.** The TTFT gap is still the main reason to route long prompts to NPU.
+- **CPU decode remains faster for Qwen 7B on X2 Elite.** The gap narrows at long context, but it does not reach parity in this rerun.
+- **Both engines are faster than the earlier X Elite Qwen 7B sweep.** At ctx=8192, QNN TTFT improved from about 71.9 s to 40.8 s, and CPU TTFT improved from about 206.5 s to 99.0 s.
+- **The hybrid target still makes sense.** The best end-to-end route for long prompts likely remains NPU prefill followed by a decode decision based on model size, context length, and hardware generation.
 
 ## Key findings
+
+The findings below include older X Elite measurements and planning notes. They are retained as history; when they conflict with F9, prefer the current checked-in X2 Elite rerun.
 
 ### F1. Chat template unlocks bit-exact NPU/CPU agreement
 
@@ -105,9 +131,9 @@ All three:  FLOAT32  [batch_or_1, 4, past_sequence_length, 128]
 
 Identical shape and dtype. No requantization bridge needed. KV cache hands off naturally via ONNX tensor IO. This obsoletes the original Plan B, which assumed patching onnxruntime-genai to expose KV IO.
 
-### F7. Context-length sweep: CPU's decode advantage erodes, not reverses
+### F7. X Elite context-length sweep: CPU's decode advantage erodes, not reverses
 
-Qwen 7B, synthetic prompt of exact token count, decode-tokens=128, 1 warmup + 3 measured runs:
+Qwen 7B on Snapdragon X Elite, synthetic prompt of exact token count, decode-tokens=128, 1 warmup + 3 measured runs:
 
 | ctx | NPU prefill | CPU prefill | NPU prefill speedup | NPU decode | CPU decode | CPU decode lead |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -128,9 +154,9 @@ Key observations:
 - **TTFT gap stays 3-5x NPU-favored across all contexts.**
 - **CPU decode variance increases at ctx>=2048**, while NPU stays tight.
 
-### F8. Size × context: decode crossover moves left, but feasibility bites
+### F8. X Elite size × context: decode crossover moves left, but feasibility bites
 
-Multi-model context sweeps, synthetic prompt of exact token count, decode-tokens=128, 1 warmup + 3 measured runs:
+Multi-model context sweeps on Snapdragon X Elite, synthetic prompt of exact token count, decode-tokens=128, 1 warmup + 3 measured runs:
 
 | Model | NPU prefill peak | ctx=64 decode winner | Long-context decode | NPU feasibility |
 |---|---:|---|---|---|

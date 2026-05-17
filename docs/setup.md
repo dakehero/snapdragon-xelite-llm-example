@@ -8,21 +8,20 @@ How the DLLs fit together:
 
 ```mermaid
 graph LR
-    A[PyPI<br/>onnxruntime-qnn] -->|ships| B[QNN provider DLLs<br/>QnnHtp, QnnCpu, etc.]
-    C[NuGet<br/>Microsoft.ML.OnnxRuntime.QNN] -->|provides| D[QNN-enabled<br/>onnxruntime.dll]
-    D --> E[onnxruntime-genai<br/>built from source]
-    B --> E
-    E -->|runs on| F[Snapdragon X Elite<br/>Hexagon NPU]
+    A[GitHub Releases<br/>wheel + DLL bundle] --> B[onnxruntime_genai package]
+    C[PyPI<br/>onnxruntime-qnn] -->|fallback| D[QNN provider DLLs<br/>QnnHtp, QnnCpu, etc.]
+    D --> B
+    E[NuGet<br/>Microsoft.ML.OnnxRuntime.QNN] -->|source build| B
+    B --> F[Snapdragon X Elite / X2 Elite<br/>Hexagon NPU]
 ```
 
-- **QNN DLLs** come from the `onnxruntime-qnn` PyPI package.
-- **onnxruntime.dll with QNN EP** comes from the NuGet `Microsoft.ML.OnnxRuntime.QNN` package, auto-downloaded during the genai source build.
-- **onnxruntime-genai** must be built from source if you are not using the pre-built wheel.
-- **Runtime DLL placement matters**: both NuGet ORT DLLs and QNN provider DLLs must coexist in the `onnxruntime_genai` package directory.
+- **Recommended path**: install the pre-built Windows ARM64 `onnxruntime-genai` wheel from this repo's Releases, then copy the matching pre-built DLL bundle from the same release.
+- **Fallback path**: `onnxruntime-qnn` from PyPI can provide QNN provider DLLs, and source builds can provide NuGet ORT DLLs.
+- **Runtime DLL placement matters**: the QNN-enabled ORT DLLs and QNN provider DLLs must coexist in the `onnxruntime_genai` package directory.
 
 ## Prerequisites
 
-- **OS**: Windows 11 ARM64 on Snapdragon X Elite / Plus
+- **OS**: Windows 11 ARM64 on Snapdragon X Elite / Plus / X2 Elite
 - **Visual Studio 2026** with C++ ARM64 build tools
 - **Python 3.14.3**
 - **CMake 4.3+**
@@ -33,30 +32,9 @@ graph LR
 
 ## Quick start
 
-### Option 0: one-shot bootstrap
+### Option 1: use the pre-built wheel and DLL bundle
 
-For a blank Windows 11 ARM64 device, run from elevated PowerShell:
-
-```powershell
-iwr -useb https://raw.githubusercontent.com/dakehero/snapdragon-xelite-llm-example/main/scripts/bootstrap_cloud.ps1 | iex
-```
-
-What it does:
-
-- Installs git, pixi, and Foundry Local via winget.
-- Clones the repo.
-- Sets up the pixi environment.
-- Downloads the pre-built wheel from Releases.
-- Pulls Qwen 2.5 7B NPU and CPU models.
-- Runs smoke test plus full context-length sweep.
-
-Result lands in `results/context_sweep_qwen7b.md`.
-
-> **Note on Smart App Control**: if it is ON, the script will warn and exit. You need to turn it off manually from Windows Settings. SAC cannot be re-enabled without a Windows reinstall.
-
-### Option 1: use pre-built wheel
-
-For Windows ARM64 with Python 3.14, download the pre-built wheel from GitHub Releases:
+For Windows ARM64 with Python 3.14, download the pre-built wheel and matching DLL bundle from GitHub Releases:
 
 ```powershell
 pixi install
@@ -64,11 +42,14 @@ pixi install
 $WheelUrl = "https://github.com/dakehero/snapdragon-xelite-llm-example/releases/download/<VERSION>/onnxruntime_genai-0.14.0.dev0-cp314-cp314-win_arm64.whl"
 pixi run python -m pip install --force-reinstall --no-deps $WheelUrl
 
-pixi run python scripts/install.py
+$DllZip = "<path-to-release-dll-zip>"
+Expand-Archive $DllZip .\release-dlls -Force
+pixi run install-genai --skip-wheel --dll-dir .\release-dlls
 
-make test
-make run MODEL_DIR=/path/to/qnn-model
+pixi run check
 ```
+
+This is the recommended path. `pixi run install-genai --skip-wheel --dll-dir ...` does not install genai by itself; it copies the release DLLs into the already-installed `onnxruntime_genai` package directory so QNN EP registration works reliably.
 
 ### Option 2: build from source
 
@@ -85,22 +66,29 @@ make run MODEL_DIR=/path/to/qnn-model
 
 ## Build paths
 
-### Path A: simple build
+### Path A: pre-built wheel + DLL bundle
 
-Use `make build` or `make build-genai`.
+Use the release wheel and release DLL bundle whenever possible:
+
+```powershell
+pixi install
+pixi run python -m pip install --force-reinstall --no-deps <path-or-url-to-onnxruntime_genai-win_arm64.whl>
+Expand-Archive <path-to-release-dll-zip> .\release-dlls -Force
+pixi run install-genai --skip-wheel --dll-dir .\release-dlls
+pixi run check
+```
+
+This avoids local C++ build fragility and is the path used for normal benchmark reproduction.
+
+### Path B: source build
+
+Use `make build` or `make build-genai` only when you need to modify `onnxruntime-genai` or build for a different Python/runtime combination.
 
 - `make build` is an alias for `make build-genai`.
-- Downloads pre-built `Microsoft.ML.OnnxRuntime.QNN` from NuGet automatically.
-- Links genai against the NuGet QNN-enabled `onnxruntime.dll`.
-- Fastest option.
+- The genai build downloads pre-built `Microsoft.ML.OnnxRuntime.QNN` from NuGet automatically.
+- It links genai against the NuGet QNN-enabled `onnxruntime.dll`.
 
-### Path B: full source build
-
-Use `make build-ort` then `make build-genai`.
-
-- First builds onnxruntime base from source with QNN EP.
-- Then builds genai linked against your custom onnxruntime.
-- Use this if you need to modify onnxruntime itself.
+Use `make build-ort` then `make build-genai` only if you need to modify ONNX Runtime itself.
 
 > `onnxruntime-genai` is intentionally excluded from `pixi.toml` to prevent `pixi install` from overwriting the custom-built QNN wheel with the standard PyPI version.
 
@@ -108,30 +96,34 @@ Use `make build-ort` then `make build-genai`.
 
 The project does not bundle models.
 
-### Option A: download a reference ONNX model from HuggingFace
+### Option A: use Microsoft Foundry Local
 
-Good for CPU baseline and `verify`:
-
-```powershell
-make download-model
-```
-
-Or pick your own:
-
-```powershell
-pixi run python scripts/download_model.py --repo <hf-repo> --subfolder <path> --dest ./models/<name>
-```
-
-### Option B: use Microsoft Foundry Local
-
-This is the most convenient source for QNN-optimized models today.
+This is the most convenient source for matching QNN and CPU models today.
 
 - Install Foundry Local.
 - Models are cached under `~/.foundry/cache/models/`.
-- Point `ORT_QNN_MODEL` at the cached path, for example:
+- Use Foundry model IDs with `:version` suffixes. The cache directories replace the colon with a dash, for example `qwen2.5-7b-instruct-generic-cpu:4` is cached under `qwen2.5-7b-instruct-generic-cpu-4`.
+
+Current Qwen 7B benchmark models:
+
+```powershell
+foundry model download qwen2.5-7b-instruct-qnn-npu:2
+foundry model download qwen2.5-7b-instruct-generic-cpu:4
+```
+
+The helper script resolves either Foundry IDs or explicit paths:
+
+```powershell
+pixi run context-sweep --model qwen7b --backends both --output-md results/context_sweep_qwen7b.md
+```
+
+### Option B: explicit model directories
+
+If you are bypassing Foundry ID resolution, point commands at the cached model directories directly, for example:
 
 ```text
 C:\Users\<user>\.foundry\cache\models\Microsoft\qwen2.5-7b-instruct-qnn-npu-2\v2
+C:\Users\<user>\.foundry\cache\models\Microsoft\qwen2.5-7b-instruct-generic-cpu-4\v4
 ```
 
 ## Verification and benchmarks
@@ -145,6 +137,7 @@ make run-ort-qnn MODEL_DIR=/path/to/qnn-model
 make run-ort-cpu MODEL_DIR=/path/to/cpu-model
 
 make benchmark ORT_QNN_MODEL=/path/qnn-model ORT_CPU_MODEL=/path/cpu-model RUNS=5
+pixi run context-sweep --model qwen7b --backends both --output-md results/context_sweep_qwen7b.md
 
 make profile MODEL_DIR=/path/to/model BACKEND=ort-qnn
 ```
@@ -159,36 +152,28 @@ make benchmark BACKENDS='--backend ort-qnn:llm_infer_ort_qnn.py:/path/a --backen
 
 ## Context-sweep reproduction
 
-### Qwen 7B
+### Qwen 7B via Foundry IDs
 
 ```powershell
-make benchmark-context `
-  ORT_QNN_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-7b-instruct-qnn-npu-2\v2" `
-  ORT_CPU_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-7b-instruct-generic-cpu-4\v4"
-
-make plot INPUTS=results/context_sweep_qwen7b.md
+pixi run context-sweep --model qwen7b --backends both --output-md results/context_sweep_qwen7b.md
+pixi run plot results/context_sweep_qwen7b.md
 ```
 
-### Qwen 1.5B
+### Qwen 1.5B via Foundry IDs
 
 ```powershell
-make benchmark-context `
-  ORT_QNN_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-1.5b-instruct-qnn-npu-2\v2" `
-  ORT_CPU_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\qwen2.5-1.5b-instruct-generic-cpu-4\v4" `
-  OUTPUT_MD=results/context_sweep_qwen1.5b.md
+pixi run context-sweep --model qwen1.5b --backends both --output-md results/context_sweep_qwen1.5b.md
 ```
 
-### R1-Distill 14B
+### R1-Distill 14B via Foundry IDs
 
 ```powershell
-make benchmark-context `
-  ORT_QNN_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\deepseek-r1-distill-qwen-14b-qnn-npu-1\qnn-deepseek-r1-distill-qwen-14b" `
-  ORT_CPU_MODEL="C:\Users\<you>\.foundry\cache\models\Microsoft\deepseek-r1-distill-qwen-14b-generic-cpu-4\v4" `
-  CONTEXTS=64,128,256,512,1024,2048,4096 `
-  OUTPUT_MD=results/context_sweep_r1distill14b.md
+pixi run context-sweep --model r1distill14b --backends both `
+  --contexts 64,128,256,512,1024,2048,4096 `
+  --output-md results/context_sweep_r1distill14b.md
 ```
 
-### Combined plot
+### Combined plot after rerunning multiple models
 
 ```powershell
 pixi run python plot.py results/context_sweep_qwen7b.md results/context_sweep_qwen1.5b.md results/context_sweep_r1distill14b.md --labels "Qwen 7B" "Qwen 1.5B" "R1-Distill 14B" --out results/context_sweep_all_models.png
@@ -243,7 +228,7 @@ RuntimeError: QNN execution provider is not supported in this build.
 
 **Root cause**: The standard `onnxruntime-genai` wheel on PyPI is built without QNN. Even though `og.is_qnn_available()` returns `True`, the actual EP registration fails because the underlying `onnxruntime.dll` linked by genai does not know about QNN.
 
-**Solution**: Build `onnxruntime-genai` from source or use the pre-built wheel from this repo's Releases.
+**Solution**: Use the pre-built wheel plus matching DLL bundle from this repo's Releases, or build `onnxruntime-genai` from source.
 
 ### 2. QNN EP registration name must be `QNNExecutionProvider`
 
@@ -310,6 +295,6 @@ Empirical test on Qwen 2.5 7B int4:
 
 **Takeaway**: Use the model's chat template for production use. `make verify` uses the bare-completion prompt by default intentionally to stress-test this behavior.
 
-## Pre-built wheels
+## Pre-built release assets
 
-Pre-built wheels for Windows ARM64 are available on GitHub Releases.
+Pre-built Windows ARM64 wheels and matching runtime DLL bundles are available on GitHub Releases.

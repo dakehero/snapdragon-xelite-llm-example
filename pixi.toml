@@ -5,6 +5,11 @@ platforms = ["win-arm64"]
 version = "0.1.0"
 
 [tasks]
+check = "python scripts/check.py"
+install-genai = "python scripts/install.py"
+benchmark = "python benchmark.py"
+context-sweep = "python scripts/context_sweep.py"
+plot = "python plot.py"
 
 [dependencies]
 python = "3.14.*"

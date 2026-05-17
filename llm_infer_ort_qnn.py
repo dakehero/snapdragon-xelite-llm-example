@@ -41,7 +41,7 @@ def make_input_tokens(tokenizer, prompt_str, prompt_tokens):
 def run_benchmark(model_dir, prompt=None, max_length=512, prompt_tokens=None, decode_tokens=None):
     if not os.path.exists(model_dir):
         print(f"Model directory not found: {model_dir}")
-        return
+        sys.exit(2)
     
     try:
         print("--- Initializing QNN engine ---")
